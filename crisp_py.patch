@@ -1,0 +1,408 @@
+diff --git a/crisp_py/config/__pycache__/__init__.cpython-311.pyc b/crisp_py/config/__pycache__/__init__.cpython-311.pyc
+index 2fb164a..bbcca43 100644
+Binary files a/crisp_py/config/__pycache__/__init__.cpython-311.pyc and b/crisp_py/config/__pycache__/__init__.cpython-311.pyc differ
+diff --git a/crisp_py/config/__pycache__/path.cpython-311.pyc b/crisp_py/config/__pycache__/path.cpython-311.pyc
+index c70f6c4..61efe90 100644
+Binary files a/crisp_py/config/__pycache__/path.cpython-311.pyc and b/crisp_py/config/__pycache__/path.cpython-311.pyc differ
+diff --git a/crisp_py/control/joint_trajectory_controller_client.py b/crisp_py/control/joint_trajectory_controller_client.py
+index 23d0b61..85bd1f0 100644
+--- a/crisp_py/control/joint_trajectory_controller_client.py
++++ b/crisp_py/control/joint_trajectory_controller_client.py
+@@ -83,7 +83,10 @@ class JointTrajectoryControllerClient(ActionClient):
+         self._goal.trajectory.joint_names = [
+             self._prefix + joint_name for joint_name in joint_names
+         ]
+-        self._goal.trajectory.header.stamp = self.node.get_clock().now().to_msg()
++        # Leave timestamp at zero to let the controller use its own time source
++        # This prevents time source mismatches between simulation and real time
++        self._goal.trajectory.header.stamp.sec = 0
++        self._goal.trajectory.header.stamp.nanosec = 0
+         self._goal.trajectory.points = []
+         self._goal.trajectory.points.append(
+             JointTrajectoryPoint(
+diff --git a/crisp_py/robot/robot.py b/crisp_py/robot/robot.py
+index 89c0c9e..b4da134 100644
+--- a/crisp_py/robot/robot.py
++++ b/crisp_py/robot/robot.py
+@@ -72,6 +72,10 @@ class Robot:
+             self.node = node
+         self.config = robot_config if robot_config else FrankaConfig()
+ 
++        # self.config.use_tf_pose = True
++        # self.config.base_frame = "panda_link0"
++        # self.config.target_frame = "panda_hand"
++
+         self._prefix = f"{namespace}_" if namespace and self.config.use_prefix else ""
+ 
+         self.controller_switcher_client = ControllerSwitcherClient(self.node)
+@@ -124,6 +128,7 @@ class Robot:
+                 qos_profile_sensor_data,
+                 callback_group=ReentrantCallbackGroup(),
+             )
++        print(self.config.current_joint_topic)
+         self._joint_subscriber = self.node.create_subscription(
+             JointState,
+             self.config.current_joint_topic,
+@@ -333,13 +338,19 @@ class Robot:
+         Returns:
+             bool: True if all necessary values for operation are available, False otherwise.
+         """
+-        return (
++        res = (
+             self._current_pose is not None
+             and self._target_pose is not None
+             and self._current_joint is not None
+             and self._target_joint is not None
+         )
+ 
++        print(self._current_joint is not None)
++
++        print(f"Robot is_ready: {res}")
++
++        return res
++
+     def reset_targets(self):
+         """Reset all target values to None.
+ 
+@@ -485,6 +496,7 @@ class Robot:
+         Args:
+             msg (PoseStamped): ROS message containing the current pose.
+         """
++        # print("Received pose")
+         self._current_pose = Pose.from_ros_msg(msg)
+         if self._target_pose is None:
+             self._target_pose = self._current_pose.copy()
+@@ -509,7 +521,9 @@ class Robot:
+         Args:
+             msg (JointState): ROS message containing joint states.
+         """
++        # print("Received joint state")
+         self._current_joint = self.ros_msg_to_joint(msg).copy()
++        # print(self._current_joint)
+ 
+         if self._target_joint is None:
+             self._target_joint = self._current_joint.copy()
+diff --git a/crisp_py/robot/robot_config.py b/crisp_py/robot/robot_config.py
+index f81db88..86a5d18 100644
+--- a/crisp_py/robot/robot_config.py
++++ b/crisp_py/robot/robot_config.py
+@@ -125,6 +125,40 @@ class FrankaConfig(RobotConfig):
+     # target_frame: str = "fr3_link8"
+ 
+ 
++@dataclass
++class FrankaEmikaPandaConfig(RobotConfig):
++    """Configuration specific to Franka Emika Panda robots.
++
++    Provides default values for frame names, joint names, and home configuration
++    specifically for Franka Emika Panda robots.
++    """
++
++    joint_names: list = field(
++        default_factory=lambda: [
++            "panda_joint1",
++            "panda_joint2",
++            "panda_joint3",
++            "panda_joint4",
++            "panda_joint5",
++            "panda_joint6",
++            "panda_joint7",
++        ]
++    )
++    home_config: list = field(
++        default_factory=lambda: [
++            0,
++            -np.pi / 4,
++            0,
++            -3 * np.pi / 4,
++            0,
++            np.pi / 2,
++            np.pi / 4,
++        ]
++    )
++    base_frame: str = "panda_link0"
++    target_frame: str = "panda_link7"
++
++
+ @dataclass
+ class KinovaConfig(RobotConfig):
+     """Configuration specific to Kinova robots.
+@@ -246,7 +280,9 @@ def make_robot_config(robot_type: str, **kwargs) -> RobotConfig:  # noqa: ANN003
+         return IiwaConfig(**kwargs)
+     elif robot_type == "so101":
+         return SO101Config(**kwargs)
++    elif robot_type == "franka_panda":
++        return FrankaEmikaPandaConfig(**kwargs)
+     else:
+         raise ValueError(
+-            f"Unsupported robot type: {robot_type}. Supported types: franka, kinova, iiwa, so101"
++            f"Unsupported robot type: {robot_type}. Supported types: franka, kinova, iiwa, so101, franka_panda"
+         )
+diff --git a/examples/00_gravity_compensation.py b/examples/00_gravity_compensation.py
+index 9fb297f..86941bf 100644
+--- a/examples/00_gravity_compensation.py
++++ b/examples/00_gravity_compensation.py
+@@ -2,13 +2,20 @@
+ 
+ # %%
+ from crisp_py.robot import make_robot
++from crisp_py.robot.robot_config import FrankaEmikaPandaConfig
+ 
+-robot = make_robot("fr3")
++cfg = FrankaEmikaPandaConfig()
++robot = make_robot(robot_config=cfg)
+ robot.wait_until_ready()
+ 
+ # %%
+-robot.cartesian_controller_parameters_client.load_param_config(
+-    file_path="config/control/gravity_compensation.yaml"
+-)
+-robot.controller_switcher_client.switch_controller("cartesian_impedance_controller")
++# robot.cartesian_controller_parameters_client.load_param_config(
++#     file_path="config/control/gravity_compensation.yaml"
++# )
++# robot.controller_switcher_client.switch_controller("cartesian_impedance_controller")
++robot.home()
++
++import time
++time.sleep(10.0)
++
+ robot.shutdown()
+diff --git a/examples/01_figure_eight.py b/examples/01_figure_eight.py
+index 2872129..a5862f3 100644
+--- a/examples/01_figure_eight.py
++++ b/examples/01_figure_eight.py
+@@ -2,22 +2,24 @@
+ 
+ # %%
+ import matplotlib.pyplot as plt
++from crisp_py.robot.robot import make_robot
+ import numpy as np
+ 
+-from crisp_py.robot import make_robot
++from crisp_py.robot.robot_config import FrankaEmikaPandaConfig
+ 
+-left_arm = make_robot("fr3_left")
+-print(left_arm._current_joint)
+-left_arm.wait_until_ready()
++cfg = FrankaEmikaPandaConfig()
++robot = make_robot(robot_config=cfg)
++print(robot._current_joint)
++robot.wait_until_ready()
+ 
+ # %%
+-print(left_arm.end_effector_pose)
+-print(left_arm.joint_values)
++print(robot.end_effector_pose)
++print(robot.joint_values)
+ 
+ # %%
+ print("Going to home position...")
+-left_arm.home()
+-homing_pose = left_arm.end_effector_pose.copy()
++robot.home()
++homing_pose = robot.end_effector_pose.copy()
+ 
+ 
+ # %%
+@@ -30,8 +32,8 @@ sin_freq_z = 0.125  # rot / s
+ max_time = 8.0
+ 
+ # %%
+-left_arm.controller_switcher_client.switch_controller("cartesian_impedance_controller")
+-left_arm.cartesian_controller_parameters_client.load_param_config(
++robot.controller_switcher_client.switch_controller("cartesian_impedance_controller")
++robot.cartesian_controller_parameters_client.load_param_config(
+     # file_path="config/control/gravity_compensation.yaml"
+     # file_path="config/control/default_operational_space_controller.yaml"
+     # file_path="config/control/clipped_cartesian_impedance.yaml"
+@@ -40,7 +42,7 @@ left_arm.cartesian_controller_parameters_client.load_param_config(
+ 
+ # %%
+ # The move_to function will publish a pose to /target_pose while interpolation linearly
+-left_arm.move_to(position=center, speed=0.15)
++robot.move_to(position=center, speed=0.15)
+ 
+ # %%
+ # The set_target will directly publish the pose to /target_pose
+@@ -50,8 +52,8 @@ ts = []
+ 
+ print("Starting to draw a circle...")
+ t = 0.0
+-target_pose = left_arm.end_effector_pose.copy()
+-rate = left_arm.node.create_rate(ctrl_freq)
++target_pose = robot.end_effector_pose.copy()
++rate = robot.node.create_rate(ctrl_freq)
+ 
+ while t < max_time:
+     x = center[0]
+@@ -59,12 +61,12 @@ while t < max_time:
+     z = radius * np.sin(2 * np.pi * sin_freq_z * t) + center[2]
+     target_pose.position = np.array([x, y, z])
+ 
+-    left_arm.set_target(pose=target_pose)
++    robot.set_target(pose=target_pose)
+ 
+     rate.sleep()
+ 
+-    ee_poses.append(left_arm.end_effector_pose.copy())
+-    target_poses.append(left_arm._target_pose.copy())
++    ee_poses.append(robot.end_effector_pose.copy())
++    target_poses.append(robot._target_pose.copy())
+     ts.append(t)
+ 
+     t += 1.0 / ctrl_freq
+@@ -74,8 +76,8 @@ while t < max_time + 1.0:
+ 
+     rate.sleep()
+ 
+-    ee_poses.append(left_arm.end_effector_pose.copy())
+-    target_poses.append(left_arm._target_pose.copy())
++    ee_poses.append(robot.end_effector_pose.copy())
++    target_poses.append(robot._target_pose.copy())
+     ts.append(t)
+ 
+     t += 1.0 / ctrl_freq
+@@ -115,7 +117,7 @@ plt.show()
+ # %%
+ 
+ print("Going back home.")
+-left_arm.home()
++robot.home()
+ 
+ # %%
+-left_arm.shutdown()
++robot.shutdown()
+diff --git a/examples/02_joint_control.py b/examples/02_joint_control.py
+index 3627fca..da560e4 100644
+--- a/examples/02_joint_control.py
++++ b/examples/02_joint_control.py
+@@ -2,8 +2,10 @@
+ import time
+ 
+ from crisp_py.robot import make_robot
++from crisp_py.robot.robot_config import FrankaEmikaPandaConfig
+ 
+-robot = make_robot("fr3")
++cfg = FrankaEmikaPandaConfig()
++robot = make_robot(robot_config=cfg)
+ robot.wait_until_ready()
+ 
+ # %%
+@@ -14,6 +16,6 @@ q = robot.joint_values
+ q[0] += 0.2
+ robot.set_target_joint(q)
+ 
+-time.sleep(1.0)
++time.sleep(10.0)
+ 
+ robot.shutdown()
+diff --git a/examples/05_apply_force.py b/examples/05_apply_force.py
+index f5b572b..bd1bde6 100644
+--- a/examples/05_apply_force.py
++++ b/examples/05_apply_force.py
+@@ -10,12 +10,12 @@ robot.wait_until_ready()
+ 
+ # %%
+ robot.home()
+-robot.controller_switcher_client.switch_controller("cartesian_impedance_controller")
++# robot.controller_switcher_client.switch_controller("cartesian_impedance_controller")
+ 
+-# %%
+-# Be sure that we are working in local coordinates
+-robot.cartesian_controller_parameters_client.set_parameters([("use_local_jacobian", True)])
++# # %%
++# # Be sure that we are working in local coordinates
++# robot.cartesian_controller_parameters_client.set_parameters([("use_local_jacobian", True)])
+ 
+-# %%
+-# Push with one newton in the z-direction w.r.t. the end effector
+-robot.set_target_wrench(force=np.array([0.0, 0.0, 1.0]), torque=np.array([0.0, 0.0, 0.0]))
++# # %%
++# # Push with one newton in the z-direction w.r.t. the end effector
++# robot.set_target_wrench(force=np.array([0.0, 0.0, 1.0]), torque=np.array([0.0, 0.0, 0.0]))
+diff --git a/examples/11_control_tests.py b/examples/11_control_tests.py
+index a890b49..d29b681 100644
+--- a/examples/11_control_tests.py
++++ b/examples/11_control_tests.py
+@@ -5,16 +5,20 @@ import matplotlib.pyplot as plt
+ import matplotlib.gridspec as gridspec
+ import numpy as np
+ 
+-from crisp_py.robot import Robot
++from crisp_py.robot import make_robot
++from crisp_py.robot.robot_config import FrankaEmikaPandaConfig
+ 
+-# left_arm = Robot(namespace="left")
+-left_arm = Robot()
+-left_arm.wait_until_ready()
++cfg = FrankaEmikaPandaConfig()
++robot = make_robot(robot_config=cfg)
++robot.wait_until_ready()
++
++left_arm = robot
+ 
+ # %%
+-# print("Going to home position...")
+-# left_arm.home()
+-# homing_pose = left_arm.end_effector_pose.copy()
++# Home once at the beginning using joint trajectory controller
++print("Going to home position...")
++left_arm.home()
++homing_pose = left_arm.end_effector_pose.copy()
+ 
+ 
+ # %%
+@@ -69,20 +73,23 @@ def drive_eight():
+ 
+ 
+ # %% === 1. OSC ===
+-left_arm.home()
++# Switch to OSC cartesian control
+ left_arm.cartesian_controller_parameters_client.load_param_config(
+-    file_path="config/control/default_operational_space_controller.yaml"
++    file_path="config/control/default_cartesian_impedance.yaml"
+ )
+ left_arm.controller_switcher_client.switch_controller("cartesian_impedance_controller")
++# Move to center using cartesian control
+ left_arm.move_to(position=center, speed=0.05)
+ ts, target_poses_osc, ee_poses_osc = drive_eight()
+ 
+ # %% === 2. Default CI ===
+-left_arm.home()
++# Switch parameters while staying in cartesian control mode
+ left_arm.cartesian_controller_parameters_client.load_param_config(
+     file_path="config/control/default_cartesian_impedance.yaml"
+ )
+-left_arm.controller_switcher_client.switch_controller("cartesian_impedance_controller")
++# Move back to home pose using cartesian control
++left_arm.move_to(pose=homing_pose, speed=0.05)
++# Then move to center
+ left_arm.move_to(position=center, speed=0.05)
+ ts, target_poses_ci, ee_poses_ci = drive_eight()
+ 
+@@ -137,7 +144,8 @@ plt.show()
+ # %%
+ 
+ print("Going back home.")
+-left_arm.home()
++# Move back to home using cartesian control
++left_arm.move_to(pose=homing_pose, speed=0.05)
+ 
+ # %%
+ left_arm.shutdown()
+diff --git a/pixi.lock b/pixi.lock
+index ae46139..6e1184a 100644
+--- a/pixi.lock
++++ b/pixi.lock
+@@ -3548,8 +3548,8 @@ packages:
+   timestamp: 1744040683266
+ - pypi: ./
+   name: crisp-python
+-  version: 2.0.0
+-  sha256: cae816859fb3b0bcdaef8631e64af8861683804a9fa1885f5552e70de5a35221
++  version: 3.0.0
++  sha256: 06128fd5ecd88a99ef037e68d76cf4a3ac8925230b942ef0c4db7e38ae2c4a67
+   requires_dist:
+   - scipy
+   - numpy<=2.3
