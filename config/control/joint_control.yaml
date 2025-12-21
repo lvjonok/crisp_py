@@ -9,13 +9,13 @@ nullspace.stiffness: 5.0
 nullspace.damping: 1.0
 nullspace.max_tau: 5.0
 nullspace.regularization: 1.0e-06
-nullspace.weights.right_fr3_joint1.value: 15.0
-nullspace.weights.right_fr3_joint2.value: 15.0
-nullspace.weights.right_fr3_joint3.value: 8.0
-nullspace.weights.right_fr3_joint4.value: 8.0
-nullspace.weights.right_fr3_joint5.value: 8.0
-nullspace.weights.right_fr3_joint6.value: 5.0
-nullspace.weights.right_fr3_joint7.value: 5.0
+nullspace.weights.panda_joint1.value: 15.0
+nullspace.weights.panda_joint2.value: 15.0
+nullspace.weights.panda_joint3.value: 8.0
+nullspace.weights.panda_joint4.value: 8.0
+nullspace.weights.panda_joint5.value: 8.0
+nullspace.weights.panda_joint6.value: 5.0
+nullspace.weights.panda_joint7.value: 5.0
 
 stop_commands: false
 
@@ -42,7 +42,7 @@ task.error_clip.z: 0.1
 
 use_coriolis_compensation: true
 use_friction: true
-use_gravity_compensation: false
+use_gravity_compensation: true
 use_local_jacobian: true
 use_operational_space: false
 use_sim_time: false
