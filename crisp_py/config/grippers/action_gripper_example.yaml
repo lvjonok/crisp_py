@@ -1,0 +1,21 @@
+# Example configuration for action-based gripper control
+# Uses control_msgs.action.GripperCommand
+
+max_value: 0.08  # Maximum gripper opening (meters)
+min_value: 0.0   # Minimum gripper opening (meters, fully closed)
+
+# Topics for joint state feedback (position/torque)
+joint_state_topic: /franka_gripper/joint_states
+index: 0  # Index of gripper joint in joint state message
+
+# Action server for sending gripper commands
+action_name: /franka_gripper/gripper_action
+
+# Control parameters
+max_effort: 50.0  # Maximum force in Newtons
+max_delta: 0.01   # Maximum position change per update (safety limiting)
+publish_frequency: 30.0  # Command sending frequency (Hz)
+
+# Optional services (if supported by your gripper)
+reboot_service: /franka_gripper/reboot
+enable_torque_service: /franka_gripper/set_torque

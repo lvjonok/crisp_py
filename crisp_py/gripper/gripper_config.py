@@ -25,6 +25,8 @@ class GripperConfig:
     publish_frequency: float = 30.0
     max_joint_delay: float = 1.0
     max_delta: float = 0.1
+    action_name: str = "gripper_controller/gripper_cmd"
+    max_effort: float = 10.0
 
     @classmethod
     def from_yaml(cls, path: str | Path, **overrides) -> "GripperConfig":  # noqa: ANN003

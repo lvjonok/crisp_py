@@ -5,6 +5,8 @@ import threading
 import numpy as np
 import rclpy
 import yaml
+from control_msgs.action import GripperCommand
+from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -177,7 +179,7 @@ class Gripper:
                 f"{self._prefix}Gripper is not initialized. Call wait_until_ready() first."
             )
             return False
-        if self._normalize(self._value) > 1.05 or self._normalize(self.value) < -0.05:
+        if self._normalize(self._value) > 1.05 or self._normalize(self._value) < -0.05:
             self.node.get_logger().error(
                 f"{self._prefix}Gripper value {self._value} is out of bounds [0.0, 1.0]. Please check the gripper configuration, and eventually calibrate the gripper."
             )
@@ -212,6 +214,8 @@ class Gripper:
     @property
     def target(self) -> float:
         """Returns the target value of the gripper."""
+        if self._target is None:
+            return 0.0
         return np.clip(self._normalize(self._target), 0.0, 1.0)
 
     def is_ready(self) -> bool:
@@ -247,12 +251,15 @@ class Gripper:
         """Publish the target command."""
         if self._target is None:
             return
+        current_value = self.value
+        if current_value is None:
+            return
         msg = Float64MultiArray()
         msg.data = [
             self._unnormalize(
-                self.value
+                current_value
                 + np.clip(
-                    self._normalize(self._target) - self.value,
+                    self._normalize(self._target) - current_value,
                     -self.config.max_delta,
                     self.config.max_delta,
                 )
@@ -360,14 +367,272 @@ class Gripper:
         return np.clip(self._normalize(msg.position[self._index]), 0.0, 1.0)
 
 
+class ActionGripper(Gripper):
+    """Gripper controlled via ROS2 action (control_msgs.action.GripperCommand)."""
+
+    THREADS_REQUIRED = 3
+
+    def __init__(
+        self,
+        node: Node | None = None,
+        namespace: str = "",
+        gripper_config: GripperConfig | None = None,
+        spin_node: bool = True,
+    ):
+        """Initialize the action-based gripper client.
+
+        Args:
+            node (Node, optional): ROS2 node to use. If None, creates a new node.
+            namespace (str, optional): ROS2 namespace for the gripper.
+            gripper_config (GripperConfig, optional): configuration for the gripper class.
+            spin_node (bool, optional): Whether to spin the node in a separate thread.
+        """
+        # Initialize parent without starting the publisher timer
+        # We'll override the command publishing mechanism
+        if not rclpy.ok() and node is None:
+            rclpy.init()
+
+        self.node = (
+            rclpy.create_node(
+                node_name="gripper_client", namespace=namespace, parameter_overrides=[]
+            )
+            if not node
+            else node
+        )
+        self.config = (
+            gripper_config if gripper_config else GripperConfig(min_value=0.0, max_value=1.0)
+        )
+
+        self._prefix = f"{namespace}_" if namespace else ""
+        self._value = None
+        self._torque = None
+        self._target = None
+        self._index = self.config.index
+        self._max_effort = self.config.max_effort
+        self._callback_monitor = CallbackMonitor(
+            self.node, stale_threshold=self.config.max_joint_delay
+        )
+
+        # Create action client instead of publisher
+        self._action_client = ActionClient(
+            self.node,
+            GripperCommand,
+            self.config.action_name,
+            callback_group=ReentrantCallbackGroup(),
+        )
+
+        # Keep the joint state subscriber for position feedback
+        self._joint_subscriber = self.node.create_subscription(
+            JointState,
+            self.config.joint_state_topic,
+            self._callback_monitor.monitor(
+                f"{namespace.capitalize()} Gripper Joint State", self._callback_joint_state
+            ),
+            qos_profile_system_default,
+            callback_group=ReentrantCallbackGroup(),
+        )
+
+        # Timer for periodic action goal sending
+        self.node.create_timer(
+            1.0 / self.config.publish_frequency,
+            self._callback_monitor.monitor(
+                f"{namespace.capitalize()} Gripper Target Publisher", self._callback_send_action_goal
+            ),
+            ReentrantCallbackGroup(),
+        )
+
+        # Keep service clients for compatibility
+        self.reboot_client = self.node.create_client(Trigger, self.config.reboot_service)
+        self.enable_torque_client = self.node.create_client(
+            SetBool, self.config.enable_torque_service
+        )
+
+        # Check if action server is available
+        server_available = self._action_client.wait_for_server(timeout_sec=5.0)
+        if not server_available:
+            self.node.get_logger().warn(
+                f"{self._prefix}Action server '{self.config.action_name}' not available. "
+                f"Gripper commands will not be sent until server becomes available."
+            )
+
+        if spin_node:
+            threading.Thread(target=self._spin_node, daemon=True).start()
+
+    @classmethod
+    def from_yaml(
+        cls,
+        config_name: str,
+        node: Node | None = None,
+        namespace: str = "",
+        spin_node: bool = True,
+        **overrides,  # noqa: ANN003
+    ) -> "ActionGripper":
+        """Create an ActionGripper instance from a YAML configuration file.
+
+        Args:
+            config_name: Name of the config file (with or without .yaml extension)
+            node: ROS2 node to use. If None, creates a new node.
+            namespace: ROS2 namespace for the gripper.
+            spin_node: Whether to spin the node in a separate thread.
+            **overrides: Additional parameters to override YAML values
+
+        Returns:
+            ActionGripper: Configured gripper instance
+
+        Raises:
+            FileNotFoundError: If the config file is not found
+        """
+        if not config_name.endswith(".yaml"):
+            config_name += ".yaml"
+
+        config_path = find_config(f"grippers/{config_name}")
+        if config_path is None:
+            config_path = find_config(config_name)
+
+        if config_path is None:
+            raise FileNotFoundError(
+                f"Gripper config file '{config_name}' not found in any CRISP config paths"
+            )
+
+        with open(config_path, "r") as f:
+            data = yaml.safe_load(f) or {}
+
+        data.update(overrides)
+
+        namespace = data.pop("namespace", namespace)
+        config_data = data.pop("gripper_config", data)
+
+        gripper_config = GripperConfig(**config_data)
+
+        return cls(
+            node=node,
+            namespace=namespace,
+            gripper_config=gripper_config,
+            spin_node=spin_node,
+        )
+
+    def _callback_send_action_goal(self):
+        """Send action goal with the current target."""
+        if self._target is None or self._value is None:
+            return
+
+        if not self._action_client.server_is_ready():
+            return
+
+        # Apply max_delta safety limiting
+        current_value = self.value
+        if current_value is None:
+            return
+        delta = np.clip(
+            self._normalize(self._target) - current_value,
+            -self.config.max_delta,
+            self.config.max_delta,
+        )
+        commanded_position = self._unnormalize(current_value + delta)
+
+        # Create and send goal
+        goal = GripperCommand.Goal()
+        goal.command.position = commanded_position
+        goal.command.max_effort = self._max_effort
+
+        # Send goal asynchronously with feedback callback
+        self._action_client.send_goal_async(
+            goal,
+            feedback_callback=self._action_feedback_callback
+        )
+
+    def _action_feedback_callback(self, feedback_msg: "GripperCommand.Impl.FeedbackMessage"):
+        """Update torque from action feedback.
+
+        Args:
+            feedback_msg: Action feedback message containing effort information.
+        """
+        # Update torque from action feedback if available
+        if hasattr(feedback_msg.feedback, 'effort'):
+            self._torque = feedback_msg.feedback.effort
+
+    def set_target(self, target: float, *, epsilon: float = 0.1, blocking: bool = False, max_effort: float | None = None):
+        """Grasp with the gripper by setting a target position.
+
+        Args:
+            target (float): The target value for the gripper between 0 and 1 from closed to open respectively.
+            epsilon (float): allowed zone around the target limits that are allowed to be set.
+            blocking (bool): If True, wait for the action to complete before returning.
+            max_effort (float, optional): Maximum effort to apply. If provided, updates the default max_effort.
+        """
+        assert 0.0 - epsilon <= target <= 1.0 + epsilon, (
+            f"The target should be normalized between 0 and 1, but is currently {target}"
+        )
+        
+        # Update max_effort if provided
+        if max_effort is not None:
+            self._max_effort = max_effort
+
+        self._target = self._unnormalize(target)
+
+        if blocking:
+            if not self._action_client.server_is_ready():
+                self.node.get_logger().warn(
+                    f"{self._prefix}Action server not available, cannot send blocking command"
+                )
+                return
+
+            # Apply max_delta safety limiting
+            current_value = self.value
+            if current_value is None:
+                self.node.get_logger().warn(
+                    f"{self._prefix}Gripper value not initialized, cannot send blocking command"
+                )
+                return
+            delta = np.clip(
+                self._normalize(self._target) - current_value,
+                -self.config.max_delta,
+                self.config.max_delta,
+            )
+            commanded_position = self._unnormalize(current_value + delta)
+
+            # Create and send goal
+            goal = GripperCommand.Goal()
+            goal.command.position = commanded_position
+            goal.command.max_effort = self._max_effort
+
+            # Send goal and wait for result
+            future = self._action_client.send_goal_async(goal)
+            
+            while not future.done():
+                self.node.get_logger().debug(
+                    "Waiting for action goal acceptance...", throttle_duration_sec=1.0
+                )
+            
+            goal_handle = future.result()
+            if goal_handle is None or not goal_handle.accepted:
+                self.node.get_logger().warn(
+                    f"{self._prefix}Action goal was rejected by the server"
+                )
+                return
+
+            result_future = goal_handle.get_result_async()
+            while not result_future.done():
+                self.node.get_logger().debug(
+                    "Waiting for action result...", throttle_duration_sec=1.0
+                )
+
+            result = result_future.result()
+            if result.status != 4:  # 4 = SUCCEEDED
+                self.node.get_logger().warn(
+                    f"{self._prefix}Action did not succeed. Status: {result.status}"
+                )
+
+
 def make_gripper(
     config_name: str | None,
     gripper_config: GripperConfig | None = None,
     node: "Node | None" = None,
     namespace: str = "",
     spin_node: bool = True,
+    use_action: bool = False,
     **overrides,  # noqa: ANN003
-) -> Gripper:
+) -> Gripper | ActionGripper:
     """Factory function to create a Gripper from a configuration file.
 
     Args:
@@ -376,18 +641,22 @@ def make_gripper(
         node: ROS2 node to use. If None, creates a new node.
         namespace: ROS2 namespace for the gripper.
         spin_node: Whether to spin the node in a separate thread.
+        use_action: If True, create an ActionGripper instead of a topic-based Gripper.
         **overrides: Additional parameters to override config values
 
     Returns:
-        Gripper: Configured gripper instance
+        Gripper | ActionGripper: Configured gripper instance
 
     Raises:
         FileNotFoundError: If the config file is not found
     """
     if not ((not config_name and gripper_config) or (config_name and not gripper_config)):
         raise ValueError("Either config_name or gripper_config must be provided, not both.")
+    
+    gripper_class = ActionGripper if use_action else Gripper
+    
     if config_name is not None:
-        return Gripper.from_yaml(
+        return gripper_class.from_yaml(
             config_name=config_name,
             node=node,
             namespace=namespace,
@@ -395,7 +664,7 @@ def make_gripper(
             **overrides,
         )
 
-    return Gripper(
+    return gripper_class(
         gripper_config=gripper_config, node=node, namespace=namespace, spin_node=spin_node
     )
 
