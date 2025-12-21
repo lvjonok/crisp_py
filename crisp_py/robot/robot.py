@@ -515,7 +515,7 @@ class Robot:
             self._target_joint = self._current_joint.copy()
 
     def move_to(
-        self, position: List | NDArray | None = None, pose: Pose | None = None, speed: float = 0.05
+        self, position: List | NDArray | None = None, pose: Pose | None = None, speed: float = 0.05, cancel_flag=None
     ):
         """Move the end-effector to a given pose by interpolating linearly between the poses.
 
@@ -523,6 +523,7 @@ class Robot:
             position: Position to move to. If None, the pose is used.
             pose: The pose to move to. If None, the position is used.
             speed: The speed of the movement. [m/s]
+            cancel_flag: Optional threading.Event to signal cancellation.
         """
         if self._current_pose is None:
             raise RuntimeError(
@@ -542,6 +543,11 @@ class Robot:
         )
 
         for t in np.linspace(0.0, 1.0, N):
+            # Check for cancellation
+            if cancel_flag is not None and cancel_flag.is_set():
+                self.node.get_logger().info("move_to cancelled")
+                return
+            
             pos = (1 - t) * start_pose.position + t * desired_pose.position
             ori = slerp([t])[0]
             next_pose = Pose(pos, ori)
@@ -550,14 +556,21 @@ class Robot:
 
         self._target_pose = desired_pose
 
-    def home(self, home_config: list[float] | None = None, blocking: bool = True):
-        """Home the robot."""
+    def home(self, home_config: list[float] | None = None, blocking: bool = True, cancel_flag=None):
+        """Home the robot.
+        
+        Args:
+            home_config (list[float], optional): Target joint configuration. If None, uses config.home_config.
+            blocking (bool): Whether to block until home is complete.
+            cancel_flag (threading.Event, optional): Event to signal cancellation during blocking wait.
+        """
         self.controller_switcher_client.switch_controller("joint_trajectory_controller")
         self.joint_trajectory_controller_client.send_joint_config(
             self.config.joint_names,
             self.config.home_config if home_config is None else home_config,
             self.config.time_to_home,
             blocking=blocking,
+            cancel_flag=cancel_flag,
         )
 
         # Set to none to avoid publishing the previous target pose after activating the next controller

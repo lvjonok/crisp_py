@@ -67,6 +67,7 @@ class JointTrajectoryControllerClient(ActionClient):
         joint_config: list[float],
         time_to_goal: float = 5.0,
         blocking: bool = True,
+        cancel_flag=None,
     ) -> Optional[FollowJointTrajectory.Result]:
         """Send a joint configuration to the robot.
 
@@ -75,6 +76,7 @@ class JointTrajectoryControllerClient(ActionClient):
             joint_config (list[float]): List of joint positions corresponding to joint_names.
             time_to_goal (float, optional): Time in seconds to reach the goal position. Defaults to 5.0.
             blocking (bool, optional): Whether to wait for the movement to complete. Defaults to True.
+            cancel_flag (threading.Event, optional): Event to signal cancellation during blocking wait.
 
         Returns:
             Optional[FollowJointTrajectory.Result]: If blocking is True, returns the result of the
@@ -97,6 +99,16 @@ class JointTrajectoryControllerClient(ActionClient):
 
         if blocking:
             while not future.done():
+                # Check for cancellation
+                if cancel_flag is not None and cancel_flag.is_set():
+                    self.node.get_logger().info("send_joint_config cancelled during goal submission")
+                    # Cancel the goal if it was submitted
+                    if future.done():
+                        goal_handle = future.result()
+                        if goal_handle.accepted:
+                            goal_handle.cancel_goal_async()
+                    return None
+                
                 self.node.get_logger().debug(
                     "Waiting for goal answer...", throttle_duration_sec=1.0
                 )
@@ -105,6 +117,12 @@ class JointTrajectoryControllerClient(ActionClient):
 
             future = goal_handle.get_result_async()
             while not future.done():
+                # Check for cancellation
+                if cancel_flag is not None and cancel_flag.is_set():
+                    self.node.get_logger().info("send_joint_config cancelled, cancelling goal")
+                    goal_handle.cancel_goal_async()
+                    return None
+                
                 self.node.get_logger().debug(
                     "Waiting for goal result...", throttle_duration_sec=1.0
                 )
