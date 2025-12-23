@@ -210,8 +210,15 @@ class Gripper:
         return self._value
 
     @property
-    def target(self) -> float:
-        """Returns the target value of the gripper."""
+    def value_unnormalized(self) -> float | None:
+        """Alias for raw_value for compatibility with ZMQ bridge."""
+        return self.raw_value
+
+    @property
+    def target(self) -> float | None:
+        """Returns the target value of the gripper or None if not set."""
+        if self._target is None:
+            return None
         return np.clip(self._normalize(self._target), 0.0, 1.0)
 
     def is_ready(self) -> bool:
@@ -379,16 +386,41 @@ def make_gripper(
         **overrides: Additional parameters to override config values
 
     Returns:
-        Gripper: Configured gripper instance
+        Gripper: Configured gripper instance (or FrankaGripper if gripper_type is "action_gripper")
 
     Raises:
         FileNotFoundError: If the config file is not found
     """
     if not ((not config_name and gripper_config) or (config_name and not gripper_config)):
         raise ValueError("Either config_name or gripper_config must be provided, not both.")
+    
     if config_name is not None:
+        # Check if this is an action-based gripper by loading the config
+        if not config_name.endswith(".yaml"):
+            config_name += ".yaml"
+
+        config_path = find_config(f"grippers/{config_name}")
+        if config_path is None:
+            config_path = find_config(config_name)
+
+        if config_path is not None:
+            with open(config_path, "r") as f:
+                data = yaml.safe_load(f) or {}
+            
+            # Check if this is an action-based gripper (FrankaGripper)
+            if data.get("gripper_type") == "action_gripper":
+                from crisp_py.gripper.franka_gripper import FrankaGripper
+                return FrankaGripper.from_yaml(
+                    config_name=config_name.replace(".yaml", ""),
+                    node=node,
+                    namespace=namespace,
+                    spin_node=spin_node,
+                    **overrides,
+                )
+        
+        # Default to regular Gripper
         return Gripper.from_yaml(
-            config_name=config_name,
+            config_name=config_name.replace(".yaml", ""),
             node=node,
             namespace=namespace,
             spin_node=spin_node,

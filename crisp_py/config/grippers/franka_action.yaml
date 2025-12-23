@@ -1,0 +1,9 @@
+# Configuration for Franka Gripper using action-based control
+# This uses the FrankaGripper class which communicates via ROS2 actions
+# instead of topics, providing better integration with the Franka gripper driver
+
+gripper_type: action_gripper
+max_value: 0.08  # Maximum width in meters
+min_value: 0.0   # Minimum width (closed)
+gripper_namespace: panda_gripper  # Namespace for Franka gripper actions
+force: 50.0  # Default grasp force in Newtons
