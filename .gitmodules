@@ -1,0 +1,6 @@
+[submodule "third_party/dex-retargeting"]
+	path = third_party/dex-retargeting
+	url = https://github.com/mattephi/dex-retargeting
+[submodule "third_party/meta-teleop-client"]
+	path = third_party/meta-teleop-client
+	url = git@github.com:mattephi/meta-teleop-client.git
