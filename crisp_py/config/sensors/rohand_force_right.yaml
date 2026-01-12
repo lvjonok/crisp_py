@@ -1,0 +1,28 @@
+# ROHand Force Sensor Configuration - Right Hand
+# This configuration is for the ROHand AP001 tactile force sensors
+
+namespace: rohand_right
+
+# Sensor parameters
+name: rohand_force_right
+description: "ROHand right hand tactile force sensors"
+
+# Topic prefix (actual topics will be ~/force_thumb, ~/force_index, etc.)
+topic_prefix: "~"
+
+# Fingers available on this hand
+fingers:
+  - thumb
+  - index
+  - middle
+  - ring
+  - little
+  - palm
+
+# Visualization settings (optional)
+visualization:
+  max_force_sum: 5000
+  max_force: 200
+  color_scale: 5
+  point_radius: 2
+  palm_point_radius: 4

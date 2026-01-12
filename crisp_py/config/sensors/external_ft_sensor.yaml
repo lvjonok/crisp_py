@@ -1,0 +1,49 @@
+# External Force-Torque Sensor Configuration
+# This configuration is for external FT sensors that publish WrenchStamped messages
+# 
+# The franka_ft_sensor ROS2 node publishes the following topics:
+#   - <wrench_topic>: Raw wrench data from the sensor
+#   - <wrench_topic>_unbiased: Gravity-compensated wrench (if subtract_bias:=true)
+#   - <wrench_topic>_ee: Wrench transformed to EE frame (if transform_to_ee:=true)
+
+# Sensor identification
+sensor_type: "external_ft"
+name: "external_ft_sensor"
+
+# ROS2 topic configuration
+# Use "netft_data" for raw data, "netft_data_unbiased" for bias-subtracted,
+# or "netft_data_ee" for transformed to end-effector frame
+data_topic: "/netft_data"
+
+# Data shape (force + torque = 6 values)
+shape: [6]
+
+# Maximum allowed data delay before considering data stale (seconds)
+max_data_delay: 0.5
+
+# Buffer size for storing recent measurements (optional)
+buffer_size: 100
+
+# Frame configuration
+# ft_frame: Frame ID of the FT sensor. If null, uses frame_id from message header
+ft_frame: null
+# tip_frame: Robot tip frame for wrench transformation. Set to enable transform_to_tip
+tip_frame: "panda_hand_tcp"
+# base_frame: Base frame for TF lookups (used for gravity vector transformation)
+base_frame: "base"
+
+# Processing options (these are handled by the ROS2 node, not this Python class)
+# For gravity compensation and frame transformation, use the franka_ft_sensor node
+# with subtract_bias:=true and/or transform_to_ee:=true launch arguments
+# Then subscribe to the appropriate topic (netft_data_unbiased or netft_data_ee)
+subtract_bias: false
+transform_to_tip: false
+
+# Gravity compensation parameters (used when subtract_bias is true in this class)
+# Note: Prefer using the ROS2 node's built-in compensation via Pinocchio
+gravity_vector: [0.0, 0.0, -9.81]
+payload_mass: 0.0
+payload_com: [0.0, 0.0, 0.0]
+
+# TF lookup timeout (seconds)
+tf_timeout: 0.1
