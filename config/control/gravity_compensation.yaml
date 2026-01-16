@@ -30,7 +30,7 @@ task.error_clip.z: 0.1
 
 use_coriolis_compensation: true
 use_friction: true
-use_gravity_compensation: false
+use_gravity_compensation: true
 use_local_jacobian: true
 use_operational_space: false
 use_sim_time: false

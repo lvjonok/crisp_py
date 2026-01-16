@@ -1,0 +1,5 @@
+sensor_type: "force_torque"
+name: "axia_ft_sensor"
+data_topic: "netft_data_unbiased"
+shape: [6]
+max_data_delay: 1.0

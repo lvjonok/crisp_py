@@ -2,6 +2,15 @@
 
 from crisp_py.sensors.float32_array_sensor import get_float32_array_sensor_spec  # noqa: F401
 from crisp_py.sensors.force_torque_sensor import get_force_torque_sensor_spec  # noqa: F401
+from crisp_py.sensors.rohand_force_sensor import (  # noqa: F401
+    DUMMY_MASKS,
+    FINGER_GRID_SHAPES,
+    FINGER_NAMES,
+    FingerForceData,
+    ROHandForceData,
+    ROHandForceSensor,
+    make_rohand_force_sensor,
+)
 from crisp_py.sensors.sensor import (
     Sensor,  # noqa: F401
     get_sensor_spec,  # noqa: F401
@@ -24,4 +33,12 @@ __all__ = [
     "get_force_torque_sensor_spec",
     "make_sensor",
     "list_sensor_configs",
+    # ROHand force sensor
+    "ROHandForceSensor",
+    "ROHandForceData",
+    "FingerForceData",
+    "make_rohand_force_sensor",
+    "FINGER_NAMES",
+    "FINGER_GRID_SHAPES",
+    "DUMMY_MASKS",
 ]

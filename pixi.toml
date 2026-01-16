@@ -8,8 +8,8 @@ channels = ["https://fast.prefix.dev/conda-forge"]
 name = "crisp_py"
 platforms = ["linux-64"]
 
-[activation]
-scripts = ["scripts/set_ros_env.sh"]
+# [activation]
+# scripts = ["scripts/set_ros_env.sh"]
 
 [dependencies]
 python = "*"

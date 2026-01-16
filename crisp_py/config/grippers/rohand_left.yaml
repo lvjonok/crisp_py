@@ -1,0 +1,29 @@
+# ROHand gripper configuration for crisp_py
+# This config is for the ROHand AP001 dexterous hand
+
+# ROS2 namespace for the gripper
+namespace: rohand_left
+
+# Frame ID used in target message headers (must match hand_ids from launch)
+frame_id: rohand_2
+
+# Gripper configuration
+joint_state_topic: rohand_left/joint_states
+command_topic: rohand_left/target_joint
+
+# Joint angle limits in radians (0.0 = fully open)
+# These are default/general limits. Actual limits per joint:
+#   - th_root_link: 0.0 to 1.57 rad (thumb rotation)
+#   - th_proximal_link: 0.0 to 0.7 rad (thumb proximal)
+#   - if/mf/rf/lf_proximal_link: 0.0 to 1.44 rad (four fingers)
+min_value: 0.0
+max_value: 1.57  # General max (varies by joint)
+
+# Publishing frequency for target commands (Hz)
+publish_frequency: 30.0
+
+# Maximum time delay before joint state is considered stale (seconds)
+max_joint_delay: 1.0
+
+# Maximum change per command cycle (radians) - not actively used for ROHand
+max_delta: 0.1
