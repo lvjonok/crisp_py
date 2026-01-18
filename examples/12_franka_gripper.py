@@ -8,7 +8,6 @@ from crisp_py.gripper.gripper import make_gripper
 
 gripper = make_gripper("gripper_franka")
 gripper.config.max_delta = 10.0
-print(gripper._joint_state_sub.topic_name)
 print(gripper.wait_until_ready())
 
 # %%

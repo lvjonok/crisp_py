@@ -8,7 +8,7 @@ from scipy.spatial.transform import Rotation
 from crisp_py.robot import make_robot
 from crisp_py.utils.geometry import Pose
 
-left_arm = make_robot("fep")
+left_arm = make_robot("panda")
 print(left_arm._current_joint)
 left_arm.wait_until_ready()
 

@@ -3,7 +3,7 @@
 # %%
 from crisp_py.robot import make_robot
 
-robot = make_robot("fep")
+robot = make_robot("panda")
 robot.wait_until_ready()
 
 # %%

@@ -552,7 +552,9 @@ class Robot:
 
     def home(self, home_config: list[float] | None = None, blocking: bool = True):
         """Home the robot."""
+        print(f"Switching controllers...")
         self.controller_switcher_client.switch_controller("joint_trajectory_controller")
+        print(f"Sending joint configuration")
         self.joint_trajectory_controller_client.send_joint_config(
             self.config.joint_names,
             self.config.home_config if home_config is None else home_config,
@@ -565,6 +567,7 @@ class Robot:
         self._target_joint = None
 
         if blocking:
+            print(f"Waiting...")
             self.wait_until_ready()
 
     def _joint_to_joint_msg(
