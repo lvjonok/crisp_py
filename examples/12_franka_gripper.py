@@ -7,7 +7,6 @@ from crisp_py.gripper.gripper import make_gripper
 
 
 gripper = make_gripper("gripper_franka")
-gripper.config.max_delta = 10.0
 print(gripper.wait_until_ready())
 
 # %%
