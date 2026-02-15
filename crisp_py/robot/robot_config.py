@@ -146,13 +146,13 @@ class PandaConfig(RobotConfig):
     )
     home_config: list = field(
         default_factory=lambda: [
-            0,
-            -np.pi / 4,
-            0,
-            -3 * np.pi / 4,
-            0,
-            np.pi / 2,
-            np.pi / 4,
+            -0.10345228761434555,
+            -0.43780624866485596,
+            0.11142776161432266,
+            -2.8763034343719482,
+            0.07738793641328812,
+            2.4114434719085693,
+            0.34049907326698303,
         ]
     )
     base_frame: str = "base"
@@ -284,6 +284,4 @@ def make_robot_config(robot_type: str, **kwargs) -> RobotConfig:  # noqa: ANN003
     elif robot_type == "so101":
         return SO101Config(**kwargs)
     else:
-        raise ValueError(
-            f"Unsupported robot type: {robot_type}. Supported types: franka, panda, kinova, iiwa, so101"
-        )
+        raise ValueError(f"Unsupported robot type: {robot_type}. Supported types: franka, panda, kinova, iiwa, so101")

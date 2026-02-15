@@ -88,6 +88,7 @@ class Robot:
         self._current_pose = None
         self._target_pose = None
         self._current_joint = None
+        self._current_joint_velocity = None
         self._target_joint = None
         self._target_wrench = None
         self._current_twist = None
@@ -290,6 +291,17 @@ class Robot:
                 "The robot has not received any joints yet. Run wait_until_ready() before running anything else."
             )
         return self._current_joint.copy()
+
+    @property
+    def joint_velocities(self) -> NDArray:
+        """Get the current joint velocities of the robot.
+
+        Returns:
+            numpy.ndarray: Copy of current joint velocities, or zeros if not available.
+        """
+        if self._current_joint_velocity is None:
+            return np.zeros(self.nq, dtype=np.float32)
+        return self._current_joint_velocity.copy()
 
     @property
     def target_joint(self) -> NDArray:
@@ -511,6 +523,9 @@ class Robot:
         """
         self._current_joint = self.ros_msg_to_joint(msg).copy()
 
+        if msg.velocity:
+            self._current_joint_velocity = self._ros_msg_to_joint_velocity(msg)
+
         if self._target_joint is None:
             self._target_joint = self._current_joint.copy()
 
@@ -590,6 +605,17 @@ class Robot:
                 joint_position
             )
         return joint_values.astype(np.float32)
+
+    def _ros_msg_to_joint_velocity(self, msg: JointState) -> NDArray:
+        """Convert a joint state message to a numpy array of joint velocities."""
+        joint_velocities = np.zeros(self.nq)
+        for joint_name, joint_velocity in zip(msg.name, msg.velocity):
+            if joint_name.removeprefix(self._prefix) not in self.config.joint_names:
+                continue
+            joint_velocities[self.config.joint_names.index(joint_name.removeprefix(self._prefix))] = (
+                joint_velocity
+            )
+        return joint_velocities.astype(np.float32)
 
     def _parse_pose_or_position(
         self, position: List | NDArray | None = None, pose: Pose | None = None

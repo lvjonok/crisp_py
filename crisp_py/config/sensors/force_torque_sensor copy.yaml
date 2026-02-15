@@ -1,0 +1,5 @@
+sensor_type: "force_torque"
+name: "ft_sensor_panda"
+data_topic: "robot_state/wrench"
+shape: [6]
+max_data_delay: 1.0
