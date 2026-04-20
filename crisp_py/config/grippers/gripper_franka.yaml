@@ -1,4 +1,8 @@
 max_value: 1.0
 min_value: 0.0
-joint_state_topic: /gripper/joint_states
-command_topic: /gripper/gripper_position_controller/commands
+# Remote rig has no separate Franka gripper node publishing state
+# (load_gripper:=false on the iris_bringup launch). Point at the
+# combined /joint_states so wait_until_ready() completes; the gripper
+# is functionally unused on this rig — RoHand handles grasping.
+joint_state_topic: /joint_states
+command_topic: /panda_gripper/gripper_position_controller/commands

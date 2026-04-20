@@ -5,7 +5,7 @@
 namespace: rohand_right
 
 # Frame ID used in target message headers (must match hand_ids from launch)
-frame_id: rohand_2
+frame_id: rohand_3
 
 # Gripper configuration
 joint_state_topic: rohand_right/joint_states
@@ -19,8 +19,14 @@ command_topic: rohand_right/target_joint
 min_value: 0.0
 max_value: 1.57  # General max (varies by joint)
 
-# Publishing frequency for target commands (Hz)
-publish_frequency: 30.0
+# Publishing frequency for target commands (Hz).
+# Kept below the rohand_ros2 driver's serial-bus throughput ceiling
+# (serial modbus + concurrent joint-state + force reads). Too high and
+# the driver's subscription queue (depth 10) accumulates, adding
+# latency linear in queue size. 15 Hz is a conservative default;
+# raise if you confirm the driver keeps up (check `ros2 topic hz
+# /rohand_right/target_joint` matches this number).
+publish_frequency: 15.0
 
 # Maximum time delay before joint state is considered stale (seconds)
 max_joint_delay: 1.0

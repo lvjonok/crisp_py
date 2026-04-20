@@ -178,15 +178,19 @@ class PandaConfig(RobotConfig):
             "panda_joint7",
         ]
     )
+    # Home captured from current live robot pose on the IRiS rig
+    # (panda + rohand_right mounted). Was the stock Franka "ready"
+    # config [0, -pi/4, 0, -3pi/4, 0, pi/2, pi/4]; overridden so
+    # `robot.home()` returns to the operator-preferred starting pose.
     home_config: list = field(
         default_factory=lambda: [
-            0,
-            -np.pi / 4,
-            0,
-            -3 * np.pi / 4,
-            0,
-            np.pi / 2,
-            np.pi / 4,
+            -0.10431207141959876,
+            -0.6259347661100008,
+            0.1405531502414945,
+            -3.002426888185434,
+            0.05394030856568451,
+            2.319674028131697,
+            1.4397711508507027,
         ]
     )
     base_frame: str = "base"

@@ -7,6 +7,7 @@ import numpy as np
 import rclpy
 import yaml
 from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import qos_profile_system_default
@@ -148,7 +149,7 @@ class ROHandGripper:
 
         self._callback_monitor = CallbackMonitor(self.node, stale_threshold=self.config.max_joint_delay)
 
-        # Publisher for target joint states
+        # Publisher for target joint states.
         self._command_publisher = self.node.create_publisher(
             JointState,
             self.config.command_topic,
